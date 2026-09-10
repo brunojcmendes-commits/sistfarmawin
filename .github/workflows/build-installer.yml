@@ -1,0 +1,79 @@
+name: Gerar instalador Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compilar Sistema Farmacia 1.2.7
+    runs-on: windows-2022
+
+    steps:
+      - name: Baixar configuracao do instalador
+        uses: actions/checkout@v4
+
+      - name: Baixar codigo do Sistema Farmacia
+        shell: powershell
+        run: |
+          git clone --depth 1 https://github.com/brunojcmendes-commits/sistema-farmacia.git source
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar PyInstaller
+        shell: powershell
+        run: python -m pip install "pyinstaller>=6,<7"
+
+      - name: Verificar codigo Windows
+        shell: powershell
+        run: |
+          if (-not (Test-Path "source/windows/src/gerente_farmacia.py")) { throw "gerente_farmacia.py nao encontrado." }
+          if (-not (Test-Path "source/windows/src/cliente_farmacia.py")) { throw "cliente_farmacia.py nao encontrado." }
+
+      - name: Compilar Gerente Farmacia
+        shell: powershell
+        run: |
+          Push-Location "source/windows/src"
+          pyinstaller --noconfirm --clean --windowed --onefile --name "Gerente_Farmacia" gerente_farmacia.py
+          Pop-Location
+
+      - name: Compilar Cliente Farmacia
+        shell: powershell
+        run: |
+          Push-Location "source/windows/src"
+          pyinstaller --noconfirm --clean --windowed --onefile --name "Cliente_Farmacia" cliente_farmacia.py
+          Pop-Location
+
+      - name: Preparar arquivos do instalador
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force "installer/Arquivos_do_Programa" | Out-Null
+          Copy-Item "source/windows/src/dist/Gerente_Farmacia.exe" "installer/Arquivos_do_Programa/"
+          Copy-Item "source/windows/src/dist/Cliente_Farmacia.exe" "installer/Arquivos_do_Programa/"
+
+      - name: Instalar Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Gerar instalador
+        shell: powershell
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "Inno Setup nao encontrado." }
+          & $iscc "installer/SisFarma.iss"
+
+      - name: Publicar instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sistema-Farmacia-Windows-1.2.7
+          path: installer/output/SisFarma_Setup_1.2.7.exe
+          if-no-files-found: error
+          retention-days: 30
